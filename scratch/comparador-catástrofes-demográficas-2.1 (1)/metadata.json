@@ -1,0 +1,5 @@
+{
+  "name": "Comparador Catástrofes Demográficas 2.1",
+  "description": "Una herramienta visual interactiva para comparar datos históricos y cifras de genocidios mediante representaciones gráficas 3D.",
+  "requestFramePermissions": []
+}
