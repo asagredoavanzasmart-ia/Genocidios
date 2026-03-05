@@ -12,6 +12,8 @@ export type Snapshot = {
   matrix: number[];
   radii: number[];
   inertias: number[];
+  densityLimits: number[];
+  minRepulsionDist: number[];
   pixels: any;
 };
 
@@ -25,6 +27,15 @@ export default function App() {
   const [forceMatrix, setForceMatrix] = useState<number[]>(Array(64).fill(0));
   const [radii, setRadii] = useState<number[]>(Array(8).fill(100));
   const [inertias, setInertias] = useState<number[]>(Array(8).fill(1));
+  const [densityLimits, setDensityLimits] = useState<number[]>(Array(8).fill(25));
+
+  const [isRadiusEnabled, setIsRadiusEnabled] = useState<boolean>(true);
+  const [isInertiaEnabled, setIsInertiaEnabled] = useState<boolean>(true);
+  const [isDensityEnabled, setIsDensityEnabled] = useState<boolean>(true);
+  const [isMinRepulsionEnabled, setIsMinRepulsionEnabled] = useState<boolean>(true);
+
+  const [minRepulsionDist, setMinRepulsionDist] = useState<number[]>(Array(8).fill(10.0));
+
   const [prompt, setPrompt] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
 
@@ -62,8 +73,10 @@ export default function App() {
       // Update config on sim
       sim.numColors = numColors;
       sim.forceMatrix = [...forceMatrix];
-      sim.radii = [...radii];
-      sim.inertias = [...inertias];
+      sim.radii = radii.map((r) => isRadiusEnabled ? r : 10000.0);
+      sim.inertias = inertias.map((inv) => isInertiaEnabled ? inv : 1.0);
+      sim.densityLimits = densityLimits.map((dl) => isDensityEnabled ? dl : 10000.0);
+      sim.minRepulsionDist = minRepulsionDist.map((dist) => isMinRepulsionEnabled ? dist : 0.0);
 
       sim.start();
 
@@ -101,14 +114,16 @@ export default function App() {
 
       simRef.current.numColors = numColors;
       simRef.current.forceMatrix = forceMatrix;
-      simRef.current.radii = radii;
-      simRef.current.inertias = inertias;
+      simRef.current.radii = radii.map((r) => isRadiusEnabled ? r : 10000.0);
+      simRef.current.inertias = inertias.map((inv) => isInertiaEnabled ? inv : 1.0);
+      simRef.current.densityLimits = densityLimits.map((dl) => isDensityEnabled ? dl : 10000.0);
+      simRef.current.minRepulsionDist = minRepulsionDist.map((dist) => isMinRepulsionEnabled ? dist : 0.0);
       simRef.current.zoom = zoom;
       simRef.current.speed = speed;
       simRef.current.isPaused = isPaused;
       simRef.current.pan = [nx, ny];
     }
-  }, [numColors, forceMatrix, radii, inertias, zoom, speed, isPaused, pan.x, pan.y]);
+  }, [numColors, forceMatrix, radii, inertias, densityLimits, isRadiusEnabled, isInertiaEnabled, isDensityEnabled, isMinRepulsionEnabled, minRepulsionDist, zoom, speed, isPaused, pan.x, pan.y]);
 
   // Mouse handlers for panning
   const handleMouseDown = (e: React.MouseEvent) => {
@@ -147,10 +162,14 @@ export default function App() {
     const newM = Array.from({ length: 64 }, () => (Math.random() * 6 - 3)); // -3 to 3
     const newR = Array.from({ length: 8 }, () => Math.floor(Math.random() * 250) + 50); // 50 to 300
     const newI = Array.from({ length: 8 }, () => Math.random() * 4 + 0.5); // 0.5 to 4.5
+    const newDL = Array.from({ length: 8 }, () => Math.floor(Math.random() * 40) + 10); // 10 to 50
+    const newMRD = Array.from({ length: 8 }, () => Math.random() * 20.0); // 0.0 to 20.0
 
     setForceMatrix(newM);
     setRadii(newR);
     setInertias(newI);
+    setDensityLimits(newDL);
+    setMinRepulsionDist(newMRD);
   };
 
   const clearValues = () => {
@@ -172,6 +191,8 @@ export default function App() {
       matrix: [...forceMatrix],
       radii: [...radii],
       inertias: [...inertias],
+      densityLimits: [...densityLimits],
+      minRepulsionDist: [...minRepulsionDist],
       pixels
     };
     setSnapshots([...snapshots, newSnapshot]);
@@ -184,6 +205,11 @@ export default function App() {
     setForceMatrix(snap.matrix);
     setRadii(snap.radii);
     setInertias(snap.inertias);
+    if (snap.densityLimits) setDensityLimits(snap.densityLimits);
+    if (snap.minRepulsionDist !== undefined) {
+      if (Array.isArray(snap.minRepulsionDist)) setMinRepulsionDist(snap.minRepulsionDist);
+      else setMinRepulsionDist(Array(8).fill(snap.minRepulsionDist));
+    }
   };
 
   const getVisualColor = (val: number) => {
@@ -371,10 +397,16 @@ export default function App() {
         </div>
 
         <div>
-          <h2 className="section-title">Radio de Interacción (Max Distance)</h2>
-          <div className="slider-group">
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <h2 className="section-title" style={{ margin: 0 }}>Radio de Interacción</h2>
+            <label className="switch-label text-xs">
+              <input type="checkbox" checked={isRadiusEnabled} onChange={(e) => setIsRadiusEnabled(e.target.checked)} />
+              <div className="switch-visual" />
+            </label>
+          </div>
+          <div className="slider-group mt-md">
             {activeColorNames.map((name, i) => (
-              <div key={`radius-${i}`} className="slider-row">
+              <div key={`radius-${i}`} className="slider-row" style={{ opacity: isRadiusEnabled ? 1 : 0.4, pointerEvents: isRadiusEnabled ? 'auto' : 'none' }}>
                 <span className="slider-label">
                   <span className="color-indicator" style={{ backgroundColor: activeCssColors[i], width: 12, height: 12 }} />
                   {name}
@@ -383,6 +415,7 @@ export default function App() {
                   type="range"
                   min="10" max="500" step="5"
                   value={radii[i]}
+                  disabled={!isRadiusEnabled}
                   onChange={(e) => {
                     const r = [...radii];
                     r[i] = parseFloat(e.target.value);
@@ -396,10 +429,16 @@ export default function App() {
         </div>
 
         <div>
-          <h2 className="section-title">Inercia por Color (Masa)</h2>
-          <div className="slider-group">
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <h2 className="section-title" style={{ margin: 0 }}>Inercia por Color (Masa)</h2>
+            <label className="switch-label text-xs">
+              <input type="checkbox" checked={isInertiaEnabled} onChange={(e) => setIsInertiaEnabled(e.target.checked)} />
+              <div className="switch-visual" />
+            </label>
+          </div>
+          <div className="slider-group mt-md">
             {activeColorNames.map((name, i) => (
-              <div key={`inertia-${i}`} className="slider-row">
+              <div key={`inertia-${i}`} className="slider-row" style={{ opacity: isInertiaEnabled ? 1 : 0.4, pointerEvents: isInertiaEnabled ? 'auto' : 'none' }}>
                 <span className="slider-label">
                   <span className="color-indicator" style={{ backgroundColor: activeCssColors[i], width: 12, height: 12 }} />
                   {name}
@@ -408,6 +447,7 @@ export default function App() {
                   type="range"
                   min="0.1" max="10.0" step="0.1"
                   value={inertias[i]}
+                  disabled={!isInertiaEnabled}
                   onChange={(e) => {
                     const inv = [...inertias];
                     inv[i] = parseFloat(e.target.value);
@@ -415,6 +455,70 @@ export default function App() {
                   }}
                 />
                 <span className="slider-value">{inertias[i].toFixed(1)}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <h2 className="section-title" style={{ margin: 0 }}>Límite Densidad Poblacional</h2>
+            <label className="switch-label text-xs">
+              <input type="checkbox" checked={isDensityEnabled} onChange={(e) => setIsDensityEnabled(e.target.checked)} />
+              <div className="switch-visual" />
+            </label>
+          </div>
+          <div className="slider-group mt-md">
+            {activeColorNames.map((name, i) => (
+              <div key={`density-${i}`} className="slider-row" style={{ opacity: isDensityEnabled ? 1 : 0.4, pointerEvents: isDensityEnabled ? 'auto' : 'none' }}>
+                <span className="slider-label">
+                  <span className="color-indicator" style={{ backgroundColor: activeCssColors[i], width: 12, height: 12 }} />
+                  {name}
+                </span>
+                <input
+                  type="range"
+                  min="1" max="100" step="1"
+                  value={densityLimits[i]}
+                  disabled={!isDensityEnabled}
+                  onChange={(e) => {
+                    const dl = [...densityLimits];
+                    dl[i] = parseFloat(e.target.value);
+                    setDensityLimits(dl);
+                  }}
+                />
+                <span className="slider-value">{densityLimits[i]}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <h2 className="section-title" style={{ margin: 0 }}>Fuerza de Repulsión Mínima Global</h2>
+            <label className="switch-label text-xs">
+              <input type="checkbox" checked={isMinRepulsionEnabled} onChange={(e) => setIsMinRepulsionEnabled(e.target.checked)} />
+              <div className="switch-visual" />
+            </label>
+          </div>
+          <div className="slider-group mt-md">
+            {activeColorNames.map((name, i) => (
+              <div key={`repulsion-${i}`} className="slider-row" style={{ opacity: isMinRepulsionEnabled ? 1 : 0.4, pointerEvents: isMinRepulsionEnabled ? 'auto' : 'none' }}>
+                <span className="slider-label">
+                  <span className="color-indicator" style={{ backgroundColor: activeCssColors[i], width: 12, height: 12 }} />
+                  {name}
+                </span>
+                <input
+                  type="range"
+                  min="0" max="50" step="0.5"
+                  value={minRepulsionDist[i]}
+                  disabled={!isMinRepulsionEnabled}
+                  onChange={(e) => {
+                    const mrd = [...minRepulsionDist];
+                    mrd[i] = parseFloat(e.target.value);
+                    setMinRepulsionDist(mrd);
+                  }}
+                />
+                <span className="slider-value">{minRepulsionDist[i].toFixed(1)}</span>
               </div>
             ))}
           </div>

@@ -22,6 +22,8 @@ uniform int u_numColors;
 uniform float u_rules[64]; // MAX_COLORS x MAX_COLORS matrix
 uniform float u_radii[8];  // MAX_COLORS max distances
 uniform float u_inertia[8]; // MAX_COLORS inertia values
+uniform float u_densityLimits[8]; // MAX_COLORS density limits
+uniform float u_minRepulsionDist[8]; // MAX_COLORS min repulsion dist
 
 uniform float u_dt;
 uniform vec2 u_resolution;
@@ -47,7 +49,38 @@ void main() {
     
     float myRadius = u_radii[typeId];
     
-    // N-Body force computation
+    // PASS 1: Calculate local density
+    float local_density = 0.0;
+    for(int i = 0; i < ${PARTICLE_COUNT}; i++) {
+        if(i == tc.x) continue; // Skip self
+        
+        vec4 otherPosType = texelFetch(u_posTypeMap, ivec2(i, 0), 0);
+        int otherId = int(otherPosType.z + 0.5) % u_numColors;
+        
+        vec2 dir = otherPosType.xy - pos;
+        
+        // Toroidal wrap-around for shortest distance
+        if (dir.x > u_resolution.x * 0.5) dir.x -= u_resolution.x;
+        else if (dir.x < -u_resolution.x * 0.5) dir.x += u_resolution.x;
+        
+        if (dir.y > u_resolution.y * 0.5) dir.y -= u_resolution.y;
+        else if (dir.y < -u_resolution.y * 0.5) dir.y += u_resolution.y;
+
+        float d = length(dir);
+        
+        if(d > 0.0 && d < myRadius) {
+            if(typeId == otherId) {
+                local_density += 1.0 - d / myRadius;
+            } else {
+                local_density += (1.0 - d / myRadius) * 0.5;
+            }
+        }
+    }
+    
+    float densityLimit = u_densityLimits[typeId];
+    float density_factor = 1.0 - min(max(0.0, local_density - densityLimit), 2.0);
+
+    // PASS 2: N-Body force computation
     for(int i = 0; i < ${PARTICLE_COUNT}; i++) {
         if(i == tc.x) continue; // Skip self
         
@@ -69,9 +102,15 @@ void main() {
             vec2 fDir = dir / d;
             float ruleForce = u_rules[typeId * 8 + otherId]; 
             
+            // Limit attraction by local density factor
+            if(ruleForce > 0.0) {
+                ruleForce *= density_factor;
+            }
+            
             // Artificial repulsion to avoid overlaps completely (REQ-07)
-            if(d < 10.0) {
-               float repulsion = (10.0 - d) * 1.0; 
+            float minRep = u_minRepulsionDist[typeId];
+            if(d < minRep) {
+               float repulsion = (minRep - d) * 1.0; 
                force -= fDir * repulsion;
             } else {
                float strength = ruleForce * (1.0 - d / myRadius); 
@@ -173,6 +212,8 @@ export class ParticleSim {
   public forceMatrix: number[] = new Array(64).fill(0);
   public radii: number[] = new Array(8).fill(100.0);
   public inertias: number[] = new Array(8).fill(1.0);
+  public densityLimits: number[] = new Array(8).fill(25.0);
+  public minRepulsionDist: number[] = new Array(8).fill(10.0);
 
   public zoom: number = 1.0;
   public speed: number = 1.0;
@@ -267,6 +308,8 @@ export class ParticleSim {
         u_rules: this.forceMatrix,
         u_radii: this.radii,
         u_inertia: this.inertias,
+        u_densityLimits: this.densityLimits,
+        u_minRepulsionDist: this.minRepulsionDist,
         u_dt: dt * 10.0 * this.speed, // scale time for visual speed
         u_resolution: [gl.canvas.width, gl.canvas.height]
       });
